@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	httpUtils "github.com/agntcy/dir/hub/utils/http"
-	"github.com/agntcy/dir/hub/utils/url"
+	urlUtils "github.com/agntcy/dir/hub/utils/url"
 )
 
 var (
@@ -36,17 +36,19 @@ type AuthConfig struct {
 // FetchAuthConfig retrieves and parses the AuthConfig from the given frontend URL.
 // It validates the URL, fetches the config.json, and normalizes backend addresses.
 // Returns the AuthConfig or an error if the operation fails.
-func FetchAuthConfig(ctx context.Context, frontedURL string) (*AuthConfig, error) {
-	if err := url.ValidateSecureURL(frontedURL); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalidFrontendURL, err)
+func FetchAuthConfig(ctx context.Context, frontendURL string, insecure bool) (*AuthConfig, error) {
+	if !insecure {
+		if err := urlUtils.ValidateSecureURL(frontendURL); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidFrontendURL, err)
+		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, frontedURL+"/config.json", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, frontendURL+"/config.json", nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrFetchingConfig, err)
 	}
 
-	resp, err := httpUtils.CreateSecureHTTPClient().Do(req)
+	resp, err := httpUtils.CreateSecureHTTPClient(insecure).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrFetchingConfig, err)
 	}
@@ -72,11 +74,15 @@ func FetchAuthConfig(ctx context.Context, frontedURL string) (*AuthConfig, error
 	}
 
 	backendAddr := authConfig.HubBackendAddress
-	backendAddr = strings.TrimPrefix(backendAddr, "http://")
-	backendAddr = strings.TrimPrefix(backendAddr, "https://")
+
+	if i := strings.Index(backendAddr, "://"); i != -1 {
+		backendAddr = backendAddr[i+3:]
+	}
 	backendAddr = strings.TrimSuffix(backendAddr, "/")
-	backendAddr = strings.TrimSuffix(backendAddr, "/v1alpha1")
-	backendAddr = fmt.Sprintf("%s:%d", backendAddr, DefaultHubBackendGRPCPort)
+
+	if !strings.Contains(backendAddr, ":") {
+		backendAddr = fmt.Sprintf("%s:443", backendAddr)
+	}
 	authConfig.HubBackendAddress = backendAddr
 
 	idpBackendAddr := authConfig.IdpBackendAddress

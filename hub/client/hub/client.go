@@ -17,7 +17,9 @@ import (
 	"github.com/agntcy/dir/hub/api/v1alpha1"
 	"github.com/opencontainers/go-digest"
 	"google.golang.org/grpc"
+
 	"google.golang.org/grpc/credentials"
+	grpcInsecure "google.golang.org/grpc/credentials/insecure"
 )
 
 const chunkSize = 4096 // 4KB
@@ -37,12 +39,19 @@ type client struct {
 
 // New creates a new Agent Hub client for the given server address.
 // Returns the client or an error if the connection could not be established.
-func New(serverAddr string) (*client, error) { //nolint:revive
+func New(serverAddr string, insecure bool) (*client, error) { //nolint:revive
 	// Create connection
-	conn, err := grpc.NewClient(
-		serverAddr,
-		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})),
-	)
+	var creds grpc.DialOption
+	if insecure {
+		creds = grpc.WithTransportCredentials(grpcInsecure.NewCredentials())
+	} else {
+		creds = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: insecure, // #nosec G402
+		}))
+	}
+
+	conn, err := grpc.NewClient(serverAddr, creds)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create grpc client: %w", err)
 	}
